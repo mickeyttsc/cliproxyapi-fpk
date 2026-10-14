@@ -1,0 +1,14 @@
+# ── 构建产物 / 大文件（由 CI / 本地构建生成，不入库）──
+dist/
+*.fpk
+app.tgz
+manifest.checksum
+
+# ── Python 缓存 ──
+__pycache__/
+*.pyc
+
+# ── 系统 / 编辑器 ──
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,16 @@
+appname               = cliproxyapi
+version               = 8.0.28-1
+display_name          = CLIProxyAPI
+desc                  = CLIProxyAPI 把 Gemini CLI / Antigravity / Codex / Claude Code 等 CLI 账号的订阅额度，转换成 OpenAI / Gemini / Claude 兼容的 API 接口，并自带 Web 管理面板（账号登录、密钥、模型与配额管理）。本包跟随上游 router-for-me/CLIProxyAPI 自动构建，默认端口 8317。
+maintainer            = router-for-me
+maintainer_url        = https://github.com/router-for-me/CLIProxyAPI
+distributor           = Mickey
+distributor_url       = https://github.com/mickeyttsc/cliproxyapi-fpk
+source                = thirdparty
+platform              = x86
+ctl_stop              = true
+service_port          = 8317
+desktop_uidir         = ui
+desktop_applaunchname = cliproxyapi.main
+changelog             = 跟随上游 CLIProxyAPI v8.0.28 + 管理面板 v1.26.3；fnOS 封装版本 8.0.28-1。
+checksum              =

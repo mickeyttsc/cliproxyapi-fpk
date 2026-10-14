@@ -1,0 +1,10 @@
+[
+  {
+    "stepTitle": "升级说明",
+    "items": [
+      { "type": "tips", "helpText": "升级会更新 CLIProxyAPI 主程序与预置的管理面板，你的配置与已登录账号不受影响。" },
+      { "type": "tips", "helpText": "面板入口、管理密钥、接口地址均保持不变。" },
+      { "type": "tips", "helpText": "升级完成后服务会自动重启，无需手动操作。" }
+    ]
+  }
+]

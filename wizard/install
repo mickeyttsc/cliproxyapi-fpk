@@ -1,0 +1,37 @@
+[
+  {
+    "stepTitle": "设置管理密钥",
+    "items": [
+      { "type": "tips", "helpText": "CLIProxyAPI 自带 Web 管理面板（登录账号、改配置、看日志都在里面），面板需要一个密钥才能进入。" },
+      { "type": "tips", "helpText": "⚠️ 留空不填 = 使用默认密钥 password。装完打开『CLIProxyAPI』图标，密钥框输入 password 即可进入面板。" },
+      { "type": "tips", "helpText": "也可以在这里直接设一个自己的密钥（8–128 位）。设了就用你填的。" },
+      { "type": "tips", "helpText": "密钥与访问地址会记录在应用数据目录的 access-info.txt，忘了可去那里查看。" },
+      {
+        "type": "password",
+        "field": "wizard_management_key",
+        "label": "管理密钥（留空则使用默认 password）",
+        "initValue": "",
+        "rules": [
+          { "pattern": "^(|.{8,128})$", "message": "密钥需为 8–128 位；留空则使用默认 password" }
+        ]
+      }
+    ]
+  },
+  {
+    "stepTitle": "CLIProxyAPI 是什么",
+    "items": [
+      { "type": "tips", "helpText": "CLIProxyAPI 把 Gemini CLI / Antigravity / Codex / Claude Code 等 CLI 账号的订阅额度，转换成 OpenAI / Gemini / Claude 兼容的 API 接口。" },
+      { "type": "tips", "helpText": "接口地址：http://NAS的IP:8317/v1 ，客户端密钥默认 sk-cliproxyapi（可在面板里改）。" },
+      { "type": "tips", "helpText": "适合把 Google AI Pro 等订阅接进 Hermes、ChatBox、NextChat 等任意支持 OpenAI 格式的客户端。" }
+    ]
+  },
+  {
+    "stepTitle": "装完之后（3 步）",
+    "items": [
+      { "type": "tips", "helpText": "1. 打开『CLIProxyAPI』图标进入管理面板（默认密钥 password）；" },
+      { "type": "tips", "helpText": "2. 在面板里登录账号（Gemini CLI / Antigravity 等 OAuth）；" },
+      { "type": "tips", "helpText": "3. 把接口地址 + 客户端密钥填进你的客户端即可使用。" },
+      { "type": "tips", "helpText": "详细说明见应用数据目录里的 access-info.txt。" }
+    ]
+  }
+]

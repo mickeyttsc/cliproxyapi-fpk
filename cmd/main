@@ -1,0 +1,272 @@
+#!/bin/bash
+# CLIProxyAPI — fnOS 生命周期脚本（start / stop / status）
+#
+# 设计要点（都是踩坑换来的，改前先读）：
+#   1. 配置文件 seed：全新安装时从包内模板生成 config.yaml（管理密钥可经安装向导指定）；
+#      **已有配置永不覆盖** —— 升级保留用户数据（账号凭据 / 改过的密钥 / 路由配置）。
+#   2. 管理面板 seed：服务端会自行从 GitHub 拉取/更新面板（static/management.html），
+#      包内预置一份保证断网也能打开。
+#   3. 进程清理只用【路径锚定】的 pkill（$BIN 绝对路径），绝不使用宽泛关键词 ——
+#      避免误杀其它应用/容器里名字相似的进程。
+#   4. TRIM_* 一律先判非空；缺失时从 /var/apps/<app> 符号链接反推，不写死卷号。
+#   5. 端口被占时先区分「自己的旧进程」与「别人的程序」：前者重启语义放行，
+#      后者拒绝启动并给出可操作报错（不是无差别「启动失败」）。
+
+APPNAME="cliproxyapi"
+DEFAULT_PORT="8317"
+DEFAULT_MGMT_KEY="password"
+DEFAULT_CLIENT_KEY="sk-cliproxyapi"
+
+_resolve_trim_paths() {
+    local appname="${TRIM_APPNAME:-$APPNAME}"
+    local appdir="" vol="" v
+    appdir="$(readlink -f "/var/apps/${appname}/target" 2>/dev/null || true)"
+    [ -z "$appdir" ] && appdir="$(readlink -f "/var/apps/${appname}" 2>/dev/null || true)"
+    case "$appdir" in
+        /vol[0-9]*/@appcenter/*) vol="$(printf '%s' "$appdir" | cut -d/ -f2)" ;;
+    esac
+    if [ -z "$vol" ]; then
+        for v in /vol[0-9]*; do
+            [ -d "${v}/@appcenter/${appname}" ] && vol="${v#/}" && break
+        done
+    fi
+    [ -z "$vol" ] && vol="vol2"
+    : "${TRIM_APPDEST:=${appdir:-/${vol}/@appcenter/${appname}}}"
+    : "${TRIM_PKGVAR:=/${vol}/@appdata/${appname}}"
+    : "${TRIM_PKGHOME:=/${vol}/@apphome/${appname}}"
+    : "${TRIM_PKGETC:=/${vol}/@appconf/${appname}}"
+    : "${TRIM_PKGTMP:=/${vol}/@apptemp/${appname}}"
+}
+
+_resolve_trim_paths
+
+PORT="${TRIM_SERVICE_PORT:-$DEFAULT_PORT}"
+BIN="${TRIM_APPDEST}/bin/cli-proxy-api"
+CONF="${TRIM_PKGVAR}/config.yaml"
+CONF_TEMPLATE="${TRIM_APPDEST}/config/config.default.yaml"
+AUTH_DIR="${TRIM_PKGVAR}/auths"
+STATIC_DIR="${TRIM_PKGVAR}/static"
+PANEL_SEED="${TRIM_APPDEST}/config/static/management.html"
+PID_FILE="${TRIM_PKGVAR}/${APPNAME}.pid"
+LOG_FILE="${TRIM_PKGVAR}/${APPNAME}.log"
+INFO_FILE="${TRIM_PKGVAR}/access-info.txt"
+START_ERR_LOG="${TRIM_TEMP_LOGFILE:-/tmp/${APPNAME}-start.log}"
+
+is_running() {
+    if [ -f "$PID_FILE" ]; then
+        local pid
+        pid="$(cat "$PID_FILE" 2>/dev/null)"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# 端口是否被占用（查监听表 = 内核事实，不看对端行为）
+port_in_use() {
+    local listing=""
+    if command -v ss >/dev/null 2>&1; then
+        listing="$(ss -ltn 2>/dev/null | awk 'NR>1 {print $4}')"
+    elif command -v netstat >/dev/null 2>&1; then
+        listing="$(netstat -ltn 2>/dev/null | awk 'NR>2 {print $4}')"
+    fi
+    if [ -n "$listing" ]; then
+        printf '%s\n' "$listing" | grep -qE "[:.]${PORT}\$" && return 0
+        return 1
+    fi
+    return 1
+}
+
+# 占用端口的进程是否是我们自己的旧实例（cmdline 含 $BIN 绝对路径）
+port_owner_is_self() {
+    local pids pid cmd
+    command -v ss >/dev/null 2>&1 || return 1
+    pids="$(ss -ltnp 2>/dev/null | grep -E "[:.]${PORT}[[:space:]]" | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u)"
+    [ -z "$pids" ] && return 1
+    for pid in $pids; do
+        cmd="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null)"
+        case "$cmd" in
+            *"$BIN"*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+service_ready() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsS --max-time 2 "http://127.0.0.1:${PORT}/" >/dev/null 2>&1
+        return $?
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        python3 - "$PORT" <<'PY' >/dev/null 2>&1
+import socket, sys
+s = socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=2)
+s.close()
+PY
+        return $?
+    fi
+    return 1
+}
+
+detect_lan_ip() {
+    local ip
+    ip="$(ip -4 route get 1.1.1.1 2>/dev/null | grep -o 'src [0-9.]*' | awk '{print $2}')"
+    case "$ip" in
+        192.168.*|10.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) echo "$ip" ;;
+        *) echo "" ;;
+    esac
+}
+
+SEEDED="0"
+SEEDED_MGMT_KEY=""
+
+seed_config() {
+    # 已有配置永不覆盖（升级保留用户数据）
+    if [ -f "$CONF" ]; then
+        return 0
+    fi
+    if [ ! -f "$CONF_TEMPLATE" ]; then
+        return 1
+    fi
+    local mgmt_key esc_key
+    mgmt_key="${wizard_management_key:-${WIZARD_MANAGEMENT_KEY:-}}"
+    [ -z "$mgmt_key" ] && mgmt_key="$DEFAULT_MGMT_KEY"
+    esc_key="$(printf '%s' "$mgmt_key" | sed -e 's/[&|\\]/\\&/g')"
+    mkdir -p "$(dirname "$CONF")" 2>/dev/null
+    if ! sed -e "s|__PORT__|${PORT}|g" \
+             -e "s|__AUTH_DIR__|${AUTH_DIR}|g" \
+             -e "s|__MANAGEMENT_KEY__|${esc_key}|g" \
+             "$CONF_TEMPLATE" > "$CONF" 2>/dev/null; then
+        rm -f "$CONF"
+        return 1
+    fi
+    chmod 600 "$CONF" 2>/dev/null || true
+    SEEDED="1"
+    SEEDED_MGMT_KEY="$mgmt_key"
+    return 0
+}
+
+seed_panel() {
+    mkdir -p "$STATIC_DIR" 2>/dev/null
+    if [ ! -s "$STATIC_DIR/management.html" ] && [ -f "$PANEL_SEED" ]; then
+        cp -f "$PANEL_SEED" "$STATIC_DIR/management.html" 2>/dev/null || true
+    fi
+}
+
+# 仅在全新安装 seed 时写一次：面板登录密钥在服务端启动后会被哈希写回 config，
+# 之后无法再从 config 还原明文，所以这里记录安装时的原始值。
+write_access_info() {
+    local lan_ip
+    lan_ip="$(detect_lan_ip)"
+    [ -z "$lan_ip" ] && lan_ip="<NAS-IP>"
+    cat > "$INFO_FILE" <<EOF
+CLIProxyAPI 访问信息（本文件由应用在安装时生成，可删除）
+====================================================
+管理面板:    http://${lan_ip}:${PORT}/management.html
+管理密钥:    ${SEEDED_MGMT_KEY}
+客户端接口:  http://${lan_ip}:${PORT}/v1   （OpenAI 兼容）
+客户端密钥:  ${DEFAULT_CLIENT_KEY}   （如已在面板修改，以面板为准）
+
+登录账号（Gemini CLI / Antigravity / Codex 等 OAuth）：
+  方式一：打开管理面板 → 账号 / Auth Files 页面，按提示完成 OAuth；
+  方式二（SSH）：
+      sudo -u ${APPNAME} HOME=${TRIM_PKGHOME} \\
+        ${BIN} -config ${CONF} -antigravity-login -no-browser
+      在本地浏览器打开提示的链接完成登录，然后把回调地址粘贴回终端。
+      （Gemini CLI 用 -login，Codex 用 -codex-login / -codex-device-login）
+EOF
+    chmod 600 "$INFO_FILE" 2>/dev/null || true
+}
+
+# 日志文件过大时轮转（防无限增长）
+rotate_log() {
+    if [ -f "$LOG_FILE" ]; then
+        local size
+        size="$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)"
+        if [ "$size" -gt 5242880 ]; then
+            mv -f "$LOG_FILE" "${LOG_FILE}.1" 2>/dev/null || true
+        fi
+    fi
+}
+
+case "$1" in
+    start)
+        if is_running; then
+            exit 0
+        fi
+        mkdir -p "$TRIM_PKGVAR" "$AUTH_DIR" "$STATIC_DIR" "$TRIM_PKGHOME" "$TRIM_PKGTMP" 2>/dev/null
+        if port_in_use; then
+            if port_owner_is_self; then
+                # 自己的旧进程残留（PID 文件丢失）→ 清理后按重启处理
+                pkill -f "$BIN" 2>/dev/null
+                sleep 1
+            else
+                echo "CLIProxyAPI 启动失败：端口 ${PORT} 已被其他程序占用，请停掉占用程序或调整端口。" > "$START_ERR_LOG" 2>/dev/null
+                exit 1
+            fi
+        fi
+        if ! seed_config; then
+            echo "CLIProxyAPI 启动失败：无法生成配置文件 ${CONF}（模板缺失或写入失败）。" > "$START_ERR_LOG" 2>/dev/null
+            exit 1
+        fi
+        seed_panel
+        if [ "$SEEDED" = "1" ]; then
+            write_access_info
+        fi
+        rotate_log
+        cd "$TRIM_PKGVAR" || exit 1
+        HOME="$TRIM_PKGHOME" nohup "$BIN" -config "$CONF" >> "$LOG_FILE" 2>&1 &
+        echo $! > "$PID_FILE"
+        ready=0
+        for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            sleep 1
+            if ! is_running; then
+                rm -f "$PID_FILE"
+                if port_in_use; then
+                    echo "CLIProxyAPI 启动失败：端口 ${PORT} 已被其他程序占用。" > "$START_ERR_LOG" 2>/dev/null
+                else
+                    echo "CLIProxyAPI 启动失败（进程提前退出），详见 ${LOG_FILE}。" > "$START_ERR_LOG" 2>/dev/null
+                fi
+                exit 1
+            fi
+            if service_ready; then
+                ready=1
+                break
+            fi
+        done
+        if [ "$ready" != "1" ]; then
+            kill "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null || true
+            rm -f "$PID_FILE"
+            echo "CLIProxyAPI 在端口 ${PORT} 上未就绪（超时），详见 ${LOG_FILE}。" > "$START_ERR_LOG" 2>/dev/null
+            exit 1
+        fi
+        exit 0
+        ;;
+    stop)
+        if [ -f "$PID_FILE" ]; then
+            pid="$(cat "$PID_FILE" 2>/dev/null)"
+            if [ -n "$pid" ]; then
+                kill "$pid" 2>/dev/null
+                for i in 1 2 3 4 5 6 7 8 9 10; do
+                    kill -0 "$pid" 2>/dev/null || break
+                    sleep 1
+                done
+                kill -9 "$pid" 2>/dev/null
+            fi
+            rm -f "$PID_FILE"
+        fi
+        # 路径锚定的兜底清理（防 PID 文件丢失后的残留进程）
+        pkill -f "$BIN" 2>/dev/null
+        exit 0
+        ;;
+    status)
+        is_running || exit 3
+        service_ready || exit 4
+        exit 0
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|status}" > "$START_ERR_LOG" 2>/dev/null
+        exit 1
+        ;;
+esac

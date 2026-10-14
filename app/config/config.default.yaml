@@ -1,0 +1,27 @@
+# CLIProxyAPI 默认配置模板（全新安装时由 cmd/main 生成 config.yaml；已有配置永不覆盖）
+config-version: 8
+
+server:
+  # 空 = 监听所有网卡（IPv4 + IPv6）
+  host: ""
+  port: __PORT__
+
+# 管理 API / 面板：allow-remote 允许局域网访问；secret-key 即面板登录密钥
+management:
+  allow-remote: true
+  secret-key: "__MANAGEMENT_KEY__"
+
+# 客户端（调用方）密钥：任何支持 OpenAI/Gemini/Claude 格式的客户端用它访问 /v1
+access:
+  api-keys:
+    - "sk-cliproxyapi"
+
+# 账号凭据存储目录（OAuth 登录后的凭据都放这里，升级不丢）
+oauth:
+  auth-dir: "__AUTH_DIR__"
+
+# 应用日志：写到文件（面板「日志」页需要），总量上限 200MB
+observability:
+  logs:
+    logging-to-file: true
+    logs-max-total-size-mb: 200

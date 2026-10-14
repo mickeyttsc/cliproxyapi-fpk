@@ -1,0 +1,10 @@
+[
+  {
+    "stepTitle": "配置说明",
+    "items": [
+      { "type": "tips", "helpText": "CLIProxyAPI 的全部配置（账号登录、客户端密钥、模型路由、代理等）都在管理面板里完成，本页只作说明。" },
+      { "type": "tips", "helpText": "打开『CLIProxyAPI』图标 → 管理面板。管理密钥与访问地址见数据目录 access-info.txt。" },
+      { "type": "tips", "helpText": "修改管理密钥、增删客户端密钥请直接在面板的『设置 / 配置』页完成。" }
+    ]
+  }
+]
