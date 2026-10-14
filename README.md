@@ -1,42 +1,41 @@
-# CLIProxyAPI for fnOS (飞牛 NAS)
+# cliproxyapi-fpk
 
-跟随上游 [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 自动构建的
-fnOS FPK 安装包。把 Gemini CLI / Antigravity / Codex / Claude Code 等 CLI 账号的订阅额度，
-转换成 OpenAI / Gemini / Claude 兼容的 API 接口，自带 Web 管理面板。
+飞牛 fnOS 上的 **CLIProxyAPI** 安装包（FPK）。自动跟随上游
+[router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 构建。
 
-## 特性
+把 Gemini CLI / Antigravity / Codex / Claude Code 等 CLI 账号的订阅额度，
+包装成 OpenAI / Gemini / Claude 兼容的 API 接口，自带 Web 管理面板。
 
-- **跟随上游**：`auto-update.yml` 长驻轮询上游 release（主程序 + 管理面板双上游），
-  有新版本自动 bump 版本号并触发构建，全链路无人工断点。
-- **供应链校验**：上游产物 sha256 固定进 `config/upstream/*.env`（版本控制内），
-  构建期逐字比对，防上游事后替换同版本资产。
-- **管理面板内置**：预置上游官方管理面板（单文件 management.html），
-  首次打开即可用，且运行期支持面板自更新。
-- **数据持久**：配置、账号凭据、面板均存放于应用数据目录，升级不丢失。
+## 包信息
 
-## 版本号规则
+| 项 | 值 |
+|---|---|
+| 包名（appname） | `cliproxyapi`（技术标识，勿改） |
+| 显示名 | CLIProxyAPI |
+| 服务端口 | `8317`（面板：`http://<NAS-IP>:8317/management.html`） |
+| 上游主程序 | [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（MIT） |
+| 管理面板 | Cli-Proxy-API-Management-Center（内置单文件版，支持面板自更新） |
+| 产物文件名 | `cliproxyapi-<版本>.fpk`（如 `cliproxyapi-8.0.29-2.fpk`） |
 
-`<上游版本>-<封装迭代号>`，如 `8.0.28-1`。上游主版本变化时迭代号归 1，
-仅封装/面板变化时迭代号 +1。
+## 本包改动（相对上游原版）
 
-## 本地构建
+- **fnOS FPK 封装**：安装 / 升级 / 卸载 / 配置全生命周期（应用中心一键装）。
+- **管理面板内置**：预置官方管理面板，首次打开即可用，运行期支持面板自更新。
+- **数据持久**：配置、账号凭据与面板存放于应用数据目录，升级 / 重装不丢。
+- **自动跟随双上游**：主程序 + 管理面板定时巡检，有新版本自动 bump + 构建发版。
+- **供应链校验**：上游产物 sha256 固定进 `config/upstream/*.env`，构建期逐字比对。
+- **敏感信息门禁**：仓库扫描脚本 + CI 门禁，防止凭据进库。
 
-```bash
-bash scripts/build-fpk.sh dist
-bash scripts/verify-fpk-gates.sh dist/cliproxyapi-<版本>.fpk
-```
+## 下载与安装
 
-## 发布
+- 滚动最新版：<https://github.com/mickeyttsc/cliproxyapi-fpk/releases/download/latest/cliproxyapi.fpk>
+- 固定版本：见 [Releases](https://github.com/mickeyttsc/cliproxyapi-fpk/releases) 页附件（`cliproxyapi-<版本>.fpk`）
+- 安装：飞牛应用中心 → 手动安装 → 选择 fpk；装后打开 `http://<NAS-IP>:8317/management.html` 添加账号。
 
-- 稳定版：tag `v<版本>`（如 `v8.0.28-1`），附件 `cliproxyapi-<版本>.fpk`；
-- 滚动版：tag `latest`（prerelease），附件 `cliproxyapi.fpk`。
+## 维护
 
-## 安装
+构建链路、版本号规则与门禁：[MAINTAINING.md](MAINTAINING.md)
 
-飞牛应用中心 → 手动安装 → 选择 fpk。默认端口 8317，
-管理面板 `http://<NAS-IP>:8317/management.html`。
+## 许可证
 
-## 开发者 / 打包者
-
-- 开发者（上游）：router-for-me
-- 打包者：Mickey（本 fork，[mickeyttsc/cliproxyapi-fpk](https://github.com/mickeyttsc/cliproxyapi-fpk)）
+上游主程序为 **MIT**（管理面板许可见其上游仓库）。本仓库仅作 fnOS 打包分发。
