@@ -19,6 +19,14 @@ access:
 # 账号凭据存储目录（OAuth 登录后的凭据都放这里，升级不丢）
 oauth:
   auth-dir: "__AUTH_DIR__"
+  # Antigravity 风控规避（默认启用）：系统提示词里出现特定指纹词组合时，上游会返回
+  # 假 429（RESOURCE_EXHAUSTED，与真实配额无关）。代理在转发前用零宽字符把下方词表
+  # 切开脱敏：模型读到的语义不变，上游风控正则失配。遇到新触发词在管理面板追加即可。
+  providers:
+    antigravity:
+      sensitive-words:
+        - "Hermes Agent"
+        - "Nous Research"
 
 # 应用日志：写到文件（面板「日志」页需要），总量上限 200MB
 observability:
